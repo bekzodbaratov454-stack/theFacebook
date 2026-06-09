@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
+import bcrypt from "bcrypt";
 import { NotFoundException } from "../exceptions/not-found.exception.js";
 import { ForbiddenException } from "../exceptions/forbidden.exception.js";
+import { BadRequestException } from "../exceptions/bad-request.exception.js";
 import { User } from "../models/user.model.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../configs/cloudinary.config.js";
 
@@ -66,16 +68,11 @@ class UserController {
       if (!isAdmin) delete updateData.role;
       delete updateData.email;
 
-      // Avatar — Cloudinary ga yuklash
       if (req.file) {
         const existingUser = await this.#_userModel.findById(id);
-
-        // Eski rasmni Cloudinary dan o'chirish
         if (existingUser?.avatar_url) {
           await deleteFromCloudinary(existingUser.avatar_url);
         }
-
-        // Yangi rasmni yuklash (memory buffer dan)
         const b64 = req.file.buffer.toString("base64");
         const dataURI = `data:${req.file.mimetype};base64,${b64}`;
         updateData.avatar_url = await uploadToCloudinary(dataURI, "blog/avatars");
@@ -88,6 +85,29 @@ class UserController {
       if (!updatedUser) throw new NotFoundException("User not found");
 
       res.send({ success: true, data: updatedUser });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // Parol o'zgartirish
+  changePassword = async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) throw new BadRequestException("Invalid user id");
+
+      const isOwner = id.toString() === req.user.id.toString();
+      const isAdmin = req.user.role === "ADMIN";
+      if (!isAdmin && !isOwner) throw new ForbiddenException("You can only change your own password");
+
+      const { password } = req.body;
+      if (!password || password.length < 6)
+        throw new BadRequestException("Password must be at least 6 characters");
+
+      const hashed = await bcrypt.hash(password, 10);
+      await this.#_userModel.findByIdAndUpdate(id, { password: hashed });
+
+      res.send({ success: true, message: "Password updated successfully" });
     } catch (error) {
       next(error);
     }

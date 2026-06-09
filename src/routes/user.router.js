@@ -9,9 +9,9 @@ const userRouter = Router();
 userRouter.get("/me/views", authMiddleware, viewController.getMyViews);
 userRouter.get("/search", userController.search);
 
-
 userRouter
     .get("/:id", authMiddleware, userController.getOne)
-    .put("/:id", authMiddleware, upload.single("image"), userController.update);
+    .put("/:id", authMiddleware, upload.single("image"), userController.update)
+    .patch("/:id/change-password", authMiddleware, userController.changePassword);
 
 export default userRouter;
