@@ -15,14 +15,27 @@ class PostController {
   // Buffer dan cloudinary ga yuklash helper
   async #uploadFile(file, folder) {
     if (!file) return null;
-    const b64 = file.buffer.toString("base64");
-    const dataURI = `data:${file.mimetype};base64,${b64}`;
-    return await uploadToCloudinary(dataURI, folder);
+    try {
+      const b64 = file.buffer.toString("base64");
+      const dataURI = `data:${file.mimetype};base64,${b64}`;
+      return await uploadToCloudinary(dataURI, folder);
+    } catch (err) {
+      console.error("❌ Cloudinary upload error:", err.message);
+      throw new Error("Rasm yuklanmadi: " + err.message);
+    }
   }
 
   create = async (req, res, next) => {
     try {
       const { title, content, created_by } = req.body;
+
+      // Validation — FormData bilan req.body bo'sh kelishi mumkin
+      if (!title || !title.trim()) {
+        return res.status(400).send({ success: false, message: "Title is required" });
+      }
+      if (!content || !content.trim()) {
+        return res.status(400).send({ success: false, message: "Content is required" });
+      }
 
       const image_url = req.files?.image?.[0]
         ? await this.#uploadFile(req.files.image[0], "blog/posts")
@@ -33,18 +46,27 @@ class PostController {
         : null;
 
       const newPost = await this.#_postModel.create({
-        title,
-        content,
+        title: title.trim(),
+        content: content.trim(),
         author: req.user.id,
         created_by,
         image_url,
         video_url,
       });
 
-      const user = await User.findById(req.user.id).select("email");
-      await sendEmail(user.email, "Post created", "Siz yangi post yaratdingiz");
+      const populated = await newPost.populate("author", "name username age avatar_url");
 
-      res.status(201).send({ success: true, data: newPost });
+      // Email xato bersa post yaratishga ta'sir qilmasin
+      try {
+        const user = await User.findById(req.user.id).select("email");
+        if (user?.email) {
+          await sendEmail(user.email, "Post created", "Siz yangi post yaratdingiz");
+        }
+      } catch (emailErr) {
+        console.error("Email send failed (non-critical):", emailErr.message);
+      }
+
+      res.status(201).send({ success: true, data: populated });
     } catch (error) {
       next(error);
     }
@@ -128,7 +150,6 @@ class PostController {
       const isOwner = post.author.toString() === req.user.id;
       if (!isAdmin && !isOwner) throw new ForbiddenException("You can only delete your own posts");
 
-      // Cloudinary dan rasmlarni o'chirish
       if (post.image_url) await deleteFromCloudinary(post.image_url);
       if (post.video_url) await deleteFromCloudinary(post.video_url);
 

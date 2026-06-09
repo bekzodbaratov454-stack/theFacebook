@@ -242,12 +242,73 @@ async function openPost(id){
   }catch(e){content.innerHTML=`<p style="color:var(--danger)">${e.message}</p>`;}
 }
 
-function renderComment(c){
+function renderComment(c,isReply=false){
   const a=c.author||{},
     date=c.createdAt?new Date(c.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'',
     isOwner=currentUser&&(a._id===currentUser._id||a._id===currentUser.id),
-    isAdmin=currentUser&&currentUser.role==='ADMIN';
-  return`<div class="comment-card" id="comment-${c._id}"><div class="comment-meta"><span class="comment-author">${a.name||a.username||'Anonymous'}</span><div style="display:flex;align-items:center;gap:8px"><span class="comment-date">${date}</span>${(isOwner||isAdmin)?`<button class="btn btn-danger" style="padding:3px 10px;font-size:12px" onclick="deleteComment('${c._id}')">Delete</button>`:''}</div></div><p class="comment-text">${escHtml(c.text)}</p></div>`;
+    isAdmin=currentUser&&currentUser.role==='ADMIN',
+    init=(a.name||a.username||'A')[0].toUpperCase(),
+    av=a.avatar_url
+      ?`<img src="${a.avatar_url}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'" />`
+      :`<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0">${init}</div>`;
+  const repliesHtml=(c.replies&&c.replies.length>0)
+    ?`<div class="replies-list" id="replies-${c._id}" style="margin-top:8px;padding-left:16px;border-left:2px solid var(--border)">${c.replies.map(r=>renderComment(r,true)).join('')}</div>`
+    :`<div class="replies-list" id="replies-${c._id}" style="margin-top:0;padding-left:16px;border-left:2px solid var(--border);display:none"></div>`;
+  const replyForm=currentUser&&!isReply
+    ?`<div class="reply-form" id="reply-form-${c._id}" style="display:none;margin-top:8px;padding-left:16px">
+        <textarea id="reply-text-${c._id}" placeholder="Write a reply..." rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button class="btn btn-primary btn-sm" onclick="doReply('${c._id}')">Reply</button>
+          <button class="btn btn-sm" style="background:var(--surface)" onclick="toggleReplyForm('${c._id}')">Cancel</button>
+        </div>
+      </div>`
+    :'';
+  const replyBtn=currentUser&&!isReply
+    ?`<button class="btn btn-sm" style="background:transparent;color:var(--accent);padding:2px 8px;font-size:12px" onclick="toggleReplyForm('${c._id}')">↩ Reply</button>`
+    :'';
+  return`<div class="comment-card" id="comment-${c._id}" style="margin-bottom:${isReply?'8px':'12px'}">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      ${av}
+      <div style="flex:1;min-width:0">
+        <div class="comment-meta" style="margin-bottom:4px">
+          <span class="comment-author">${escHtml(a.name||a.username||'Anonymous')}</span>
+          <span class="comment-date" style="margin-left:8px">${date}</span>
+          <div style="display:inline-flex;gap:6px;margin-left:8px">
+            ${replyBtn}
+            ${(isOwner||isAdmin)?`<button class="btn btn-danger" style="padding:2px 8px;font-size:12px" onclick="deleteComment('${c._id}')">Delete</button>`:''}
+          </div>
+        </div>
+        <p class="comment-text" style="margin:0">${escHtml(c.text)}</p>
+      </div>
+    </div>
+    ${replyForm}
+    ${!isReply?repliesHtml:''}
+  </div>`;
+}
+
+function toggleReplyForm(commentId){
+  const form=document.getElementById('reply-form-'+commentId);
+  if(!form)return;
+  const isHidden=form.style.display==='none';
+  form.style.display=isHidden?'block':'none';
+  if(isHidden)document.getElementById('reply-text-'+commentId)?.focus();
+}
+
+async function doReply(commentId){
+  const textarea=document.getElementById('reply-text-'+commentId);
+  const text=textarea?.value.trim();
+  if(!text)return;
+  try{
+    const res=await api(`/posts/comments/${commentId}/reply`,{method:'POST',body:JSON.stringify({text})});
+    textarea.value='';
+    document.getElementById('reply-form-'+commentId).style.display='none';
+    const repliesList=document.getElementById('replies-'+commentId);
+    if(repliesList){
+      repliesList.style.display='block';
+      repliesList.insertAdjacentHTML('beforeend',renderComment(res.data,true));
+    }
+    toast('Reply posted!');
+  }catch(e){toast(e.message,'error');}
 }
 
 async function doComment(postId){
@@ -315,6 +376,8 @@ async function loadProfile(){
     document.getElementById('profileAge').innerHTML=`${ICONS.cake} Age ${escHtml(String(u.age||'—'))}`;
     document.getElementById('profileJoined').innerHTML=`${ICONS.calendar} Joined ${u.createdAt?new Date(u.createdAt).toLocaleDateString('en-US',{month:'short',year:'numeric'}):'—'}`;
     document.getElementById('profileRoleBadge').innerHTML=u.role==='ADMIN'?'<span class="tag">Admin</span>':'';
+    const adminBtn=document.getElementById('adminNavBtn');
+    if(adminBtn)adminBtn.style.display=u.role==='ADMIN'?'':'none';
     document.getElementById('editName').value=u.name||'';
     document.getElementById('editAge').value=u.age||'';
     document.getElementById('editEmail').value=u.email||'';
@@ -532,7 +595,7 @@ async function toggleFollow(userId,isCurrentlyFollowing){
 }
 
 let socket=null;
-let currentDmUserId=null;
+let currentDmUserId=null;let currentConversationId=null;
 let replyingTo=null; // {_id, text, senderName}
 
 const REACTIONS=['❤️','😂','😮','😢','👍','🔥'];
@@ -846,8 +909,11 @@ async function openDm(userId,userObj){
   const msgEl=document.getElementById('dmMessages');
   msgEl.innerHTML='<div class="empty-state"><span class="spinner spinner-dark"></span></div>';
   try{
-    const res=await api(`/chat/dm/${userId}?limit=60`);
-    const msgs=res.data||[];
+    const convRes=await api(`/chat/conversations/with/${userId}`);
+    const conv=convRes.data;
+    currentConversationId=conv._id;
+    const msgRes=await api(`/chat/conversations/${conv._id}/messages?limit=60`);
+    const msgs=msgRes.data||[];
     if(!msgs.length){msgEl.innerHTML='<div class="empty-state"><p>No messages yet. Say something! 💬</p></div>';return;}
     msgEl.innerHTML='';
     let lastDate='';
@@ -857,6 +923,7 @@ async function openDm(userId,userObj){
       appendDmMsg(m,msgEl);
     });
     scrollChatBottom(msgEl);
+    socket?.emit('dm:join',{conversationId:currentConversationId});
     socket?.emit('dm:seen',{senderId:userId});
   }catch(e){msgEl.innerHTML=`<div class="empty-state"><p style="color:var(--danger)">${e.message}</p></div>`;}
 }
@@ -900,7 +967,7 @@ function appendDmMsg(msg,container){
 
 async function deleteDmMsg(msgId){
   if(!confirm('Delete this message?'))return;
-  try{await api('/chat/dm/'+msgId,{method:'DELETE'});document.getElementById('msg-'+msgId)?.remove();toast('Message deleted');}
+  try{await api('/chat/conversations/messages/'+msgId,{method:'DELETE'});document.getElementById('msg-'+msgId)?.remove();toast('Message deleted');}
   catch(e){toast(e.message,'error');}
 }
 
@@ -941,13 +1008,14 @@ function formatNotifText(n){
   const who=`<strong>${escHtml(n.fromUser?.name||n.fromUser?.username||'Someone')}</strong>`;
   if(n.type==='like')return`${who} liked your post`;
   if(n.type==='comment')return`${who} commented on your post`;
+  if(n.type==='reply')return`${who} replied to your comment`;
   if(n.type==='follow')return`${who} started following you`;
   return escHtml(n.message||'New notification');
 }
 
 function notifIcon(type){
   if(type==='like')return`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`;
-  if(type==='comment')return`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`;
+  if(type==='comment'||type==='reply')return`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`;
   return`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`;
 }
 
@@ -1002,4 +1070,225 @@ function timeAgo(dateStr){
   const days=Math.floor(hrs/24);
   if(days<7)return`${days}d`;
   return new Date(dateStr).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+
+let adminCurrentTab = 'dashboard';
+let adminUsersPage = 1;
+let adminPostsPage = 1;
+
+function adminTab(tab) {
+  adminCurrentTab = tab;
+  ['dashboard','users','posts','notify'].forEach(t => {
+    const el = document.getElementById('admin-' + t);
+    const btn = document.getElementById('atab-' + t);
+    if (el) el.style.display = t === tab ? 'block' : 'none';
+    if (btn) {
+      btn.className = t === tab ? 'btn btn-primary btn-sm' : 'btn btn-sm';
+      if (t !== tab) btn.style.background = 'var(--surface)';
+    }
+  });
+  if (tab === 'dashboard') loadAdminDashboard();
+  if (tab === 'users') { adminUsersPage = 1; loadAdminUsers(); }
+  if (tab === 'posts') { adminPostsPage = 1; loadAdminPosts(); }
+}
+
+async function loadAdminDashboard() {
+  const el = document.getElementById('adminStats');
+  if (!el) return;
+  el.innerHTML = '<div style="grid-column:1/-1;text-align:center"><span class="spinner spinner-dark"></span></div>';
+  try {
+    const res = await api('/admin/dashboard');
+    const d = res.data;
+    const stats = [
+      { label: 'Total Users', value: d.users.total, icon: '👥', color: '#6366f1' },
+      { label: 'Active Users', value: d.users.active, icon: '🟢', color: '#22c55e' },
+      { label: 'Admins', value: d.users.admins, icon: '⚙️', color: '#f59e0b' },
+      { label: 'New this week', value: d.users.newThisWeek, icon: '🆕', color: '#3b82f6' },
+      { label: 'Total Posts', value: d.posts.total, icon: '📝', color: '#8b5cf6' },
+      { label: 'Posts this week', value: d.posts.newThisWeek, icon: '📈', color: '#ec4899' },
+      { label: 'Comments', value: d.comments.total, icon: '💬', color: '#14b8a6' },
+      { label: 'Likes', value: d.likes.total, icon: '❤️', color: '#ef4444' },
+      { label: 'Follows', value: d.follows.total, icon: '👤', color: '#f97316' },
+      { label: 'Messages', value: d.messages.total, icon: '✉️', color: '#06b6d4' },
+    ];
+    el.innerHTML = stats.map(s => `
+      <div style="background:var(--surface);border-radius:12px;padding:16px;text-align:center;border-left:4px solid ${s.color}">
+        <div style="font-size:24px;margin-bottom:6px">${s.icon}</div>
+        <div style="font-size:24px;font-weight:700;color:${s.color}">${s.value}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">${s.label}</div>
+      </div>
+    `).join('');
+  } catch(e) { el.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`; }
+}
+
+let adminUserSearchTimer = null;
+function adminSearchUsers() {
+  clearTimeout(adminUserSearchTimer);
+  adminUserSearchTimer = setTimeout(() => { adminUsersPage = 1; loadAdminUsers(); }, 400);
+}
+
+async function loadAdminUsers(page = adminUsersPage) {
+  adminUsersPage = page;
+  const el = document.getElementById('adminUsersList');
+  el.innerHTML = '<div class="empty-state"><span class="spinner spinner-dark"></span></div>';
+  const search = document.getElementById('adminUserSearch')?.value || '';
+  const role = document.getElementById('adminRoleFilter')?.value || '';
+  let url = `/admin/users?page=${page}&limit=15`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  if (role) url += `&role=${role}`;
+  try {
+    const res = await api(url);
+    const { users, pagination } = res.data;
+    if (!users.length) { el.innerHTML = '<div class="empty-state"><p>No users found</p></div>'; return; }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);color:var(--muted)">
+            <th style="text-align:left;padding:8px 6px">User</th>
+            <th style="text-align:left;padding:8px 6px">Email</th>
+            <th style="text-align:center;padding:8px 6px">Role</th>
+            <th style="text-align:center;padding:8px 6px">Status</th>
+            <th style="text-align:center;padding:8px 6px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.map(u => `
+            <tr style="border-bottom:1px solid var(--border)" id="admin-user-row-${u._id}">
+              <td style="padding:10px 6px">
+                <div style="font-weight:600">${escHtml(u.name||u.username)}</div>
+                <div style="font-size:12px;color:var(--muted)">@${escHtml(u.username)}</div>
+              </td>
+              <td style="padding:10px 6px;color:var(--muted);font-size:13px">${escHtml(u.email||'-')}</td>
+              <td style="text-align:center;padding:10px 6px">
+                <span style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${u.role==='ADMIN'?'#f59e0b22':'#6366f122'};color:${u.role==='ADMIN'?'#f59e0b':'#6366f1'}">${u.role}</span>
+              </td>
+              <td style="text-align:center;padding:10px 6px">
+                <span style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${u.isActive?'#22c55e22':'#ef444422'};color:${u.isActive?'#22c55e':'#ef4444'}">${u.isActive?'Active':'Blocked'}</span>
+              </td>
+              <td style="text-align:center;padding:10px 6px">
+                <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
+                  ${u.role==='ADMIN'
+                    ?`<button class="btn btn-sm" style="background:#f59e0b22;color:#f59e0b;font-size:11px;padding:3px 8px" onclick="adminRemoveAdmin('${u._id}')">Remove Admin</button>`
+                    :`<button class="btn btn-sm" style="background:#6366f122;color:#6366f1;font-size:11px;padding:3px 8px" onclick="adminMakeAdmin('${u._id}')">Make Admin</button>`
+                  }
+                  <button class="btn btn-sm" style="background:${u.isActive?'#ef444422':'#22c55e22'};color:${u.isActive?'#ef4444':'#22c55e'};font-size:11px;padding:3px 8px" onclick="adminToggleActive('${u._id}','${u.isActive}')">${u.isActive?'Block':'Unblock'}</button>
+                  <button class="btn btn-danger" style="font-size:11px;padding:3px 8px" onclick="adminDeleteUser('${u._id}','${escHtml(u.username)}')">Delete</button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    // Pagination
+    const pag = document.getElementById('adminUsersPagination');
+    pag.innerHTML = '';
+    for (let i = 1; i <= pagination.totalPages; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm';
+      btn.style.background = i === page ? 'var(--accent)' : 'var(--surface)';
+      btn.style.color = i === page ? '#fff' : 'var(--text)';
+      btn.textContent = i;
+      btn.onclick = () => loadAdminUsers(i);
+      pag.appendChild(btn);
+    }
+  } catch(e) { el.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`; }
+}
+
+async function adminMakeAdmin(id) {
+  if (!confirm('Bu userni ADMIN qilasizmi?')) return;
+  try { await api(`/admin/users/${id}/make-admin`, { method: 'PATCH' }); toast('Admin qilindi!'); loadAdminUsers(); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function adminRemoveAdmin(id) {
+  if (!confirm('Admin huquqini olib tashlaysizmi?')) return;
+  try { await api(`/admin/users/${id}/remove-admin`, { method: 'PATCH' }); toast('Admin huquqi olindi!'); loadAdminUsers(); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function adminToggleActive(id, isActive) {
+  const action = isActive === 'true' ? 'bloklaysizmi' : 'aktivlashtirasizmi';
+  if (!confirm(`Bu userni ${action}?`)) return;
+  try { await api(`/admin/users/${id}/toggle-active`, { method: 'PATCH' }); toast('Muvaffaqiyatli!'); loadAdminUsers(); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function adminDeleteUser(id, username) {
+  if (!confirm(`"${username}" ni barcha ma'lumotlari bilan o'chirasizmi? Bu amalni qaytarib bo'lmaydi!`)) return;
+  try { await api(`/admin/users/${id}`, { method: 'DELETE' }); toast('User uchirildi'); loadAdminUsers(); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+let adminPostSearchTimer = null;
+function adminSearchPosts() {
+  clearTimeout(adminPostSearchTimer);
+  adminPostSearchTimer = setTimeout(() => { adminPostsPage = 1; loadAdminPosts(); }, 400);
+}
+
+async function loadAdminPosts(page = adminPostsPage) {
+  adminPostsPage = page;
+  const el = document.getElementById('adminPostsList');
+  el.innerHTML = '<div class="empty-state"><span class="spinner spinner-dark"></span></div>';
+  const search = document.getElementById('adminPostSearch')?.value || '';
+  let url = `/admin/posts?page=${page}&limit=15`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+  try {
+    const res = await api(url);
+    const { posts, pagination } = res.data;
+    if (!posts.length) { el.innerHTML = '<div class="empty-state"><p>No posts found</p></div>'; return; }
+    el.innerHTML = posts.map(p => `
+      <div style="background:var(--surface);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+        ${p.image_url ? `<img src="${p.image_url}" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'" />` : ''}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;margin-bottom:4px">${escHtml(p.title)}</div>
+          <div style="font-size:12px;color:var(--muted)">@${escHtml(p.author?.username||'?')} · ${new Date(p.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.content?.slice(0,80)||'')}</div>
+        </div>
+        <button class="btn btn-danger" style="font-size:12px;flex-shrink:0" onclick="adminDeletePost('${p._id}')">Delete</button>
+      </div>
+    `).join('');
+    const pag = document.getElementById('adminPostsPagination');
+    pag.innerHTML = '';
+    for (let i = 1; i <= pagination.totalPages; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm';
+      btn.style.background = i === page ? 'var(--accent)' : 'var(--surface)';
+      btn.style.color = i === page ? '#fff' : 'var(--text)';
+      btn.textContent = i;
+      btn.onclick = () => loadAdminPosts(i);
+      pag.appendChild(btn);
+    }
+  } catch(e) { el.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`; }
+}
+
+async function adminDeletePost(id) {
+  if (!confirm('Bu postni uchirasizmi?')) return;
+  try { await api(`/admin/posts/${id}`, { method: 'DELETE' }); toast('Post uchirildi'); loadAdminPosts(); }
+  catch(e) { toast(e.message, 'error'); }
+}
+
+async function adminBroadcast() {
+  const msg = document.getElementById('broadcastMsg')?.value.trim();
+  if (!msg) return toast('Xabar matni kiriting', 'error');
+  if (!confirm(`Barcha foydalanuvchilarga "${msg}" xabarini yuborasizmi?`)) return;
+  try {
+    const res = await api('/admin/notifications/broadcast', { method: 'POST', body: JSON.stringify({ message: msg }) });
+    toast(`✅ ${res.data.sent} ta foydalanuvchiga yuborildi`);
+    document.getElementById('broadcastMsg').value = '';
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function adminNotifyUser() {
+  const id = document.getElementById('notifyUserId')?.value.trim();
+  const msg = document.getElementById('notifyUserMsg')?.value.trim();
+  if (!id) return toast('User ID kiriting', 'error');
+  if (!msg) return toast('Xabar matni kiriting', 'error');
+  try {
+    await api(`/admin/notifications/user/${id}`, { method: 'POST', body: JSON.stringify({ message: msg }) });
+    toast('✅ Notification yuborildi');
+    document.getElementById('notifyUserId').value = '';
+    document.getElementById('notifyUserMsg').value = '';
+  } catch(e) { toast(e.message, 'error'); }
 }

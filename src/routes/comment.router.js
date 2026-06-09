@@ -9,6 +9,7 @@ const commentRouter = Router();
 commentRouter
     .post("/:id/comments", authMiddleware, ValidationMiddleware(CommentSchema), commentController.create)
     .get("/:id/comments", commentController.getAll)
+    .post("/comments/:commentId/reply", authMiddleware, ValidationMiddleware(CommentSchema), commentController.reply)
     .put("/comments/:id", authMiddleware, ValidationMiddleware(CommentSchema), commentController.update)
     .delete("/comments/:id", authMiddleware, commentController.delete);
 

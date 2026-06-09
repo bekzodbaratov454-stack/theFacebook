@@ -33,6 +33,7 @@
           <span class="nav-badge" id="dmBadge" style="display:none"></span>
         </button>
         <button class="btn btn-ghost btn-sm" onclick="showPage('profilePage');loadProfile()">Profile</button>
+        <button class="btn btn-danger btn-sm" id="adminNavBtn" onclick="showPage('adminPage');loadAdminDashboard()" style="display:none">⚙ Admin</button>
         <button class="btn btn-primary btn-sm" onclick="showPage('createPage')">+ Write</button>
         <button class="btn btn-ghost btn-sm" onclick="logout()">Log out</button>
       </div>
@@ -419,6 +420,72 @@
     </div>
     <div id="notifList">
       <div class="empty-state"><span class="spinner spinner-dark"></span></div>
+    </div>
+  </div>
+</div>
+
+
+<div class="page" id="adminPage">
+  <div style="max-width:900px;margin:0 auto;padding:20px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <button class="back-btn" onclick="goHome()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        Back
+      </button>
+      <h2 style="margin:0">⚙ Admin Panel</h2>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="adminTab('dashboard')" id="atab-dashboard">Dashboard</button>
+      <button class="btn btn-sm" style="background:var(--surface)" onclick="adminTab('users')" id="atab-users">Users</button>
+      <button class="btn btn-sm" style="background:var(--surface)" onclick="adminTab('posts')" id="atab-posts">Posts</button>
+      <button class="btn btn-sm" style="background:var(--surface)" onclick="adminTab('notify')" id="atab-notify">Notifications</button>
+    </div>
+
+    <!-- Dashboard tab -->
+    <div id="admin-dashboard">
+      <div id="adminStats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px"></div>
+    </div>
+
+    <!-- Users tab -->
+    <div id="admin-users" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <input id="adminUserSearch" type="text" placeholder="Search users..." style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)" oninput="adminSearchUsers()" />
+        <select id="adminRoleFilter" onchange="adminSearchUsers()" style="padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
+          <option value="">All roles</option>
+          <option value="USER">USER</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+      </div>
+      <div id="adminUsersList"></div>
+      <div id="adminUsersPagination" style="display:flex;gap:8px;margin-top:16px;justify-content:center"></div>
+    </div>
+
+    <!-- Posts tab -->
+    <div id="admin-posts" style="display:none">
+      <div style="margin-bottom:16px">
+        <input id="adminPostSearch" type="text" placeholder="Search posts..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)" oninput="adminSearchPosts()" />
+      </div>
+      <div id="adminPostsList"></div>
+      <div id="adminPostsPagination" style="display:flex;gap:8px;margin-top:16px;justify-content:center"></div>
+    </div>
+
+    <!-- Notifications tab -->
+    <div id="admin-notify" style="display:none">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="background:var(--surface);border-radius:12px;padding:20px">
+          <h4 style="margin:0 0 12px">📢 Broadcast — barcha foydalanuvchilarga</h4>
+          <textarea id="broadcastMsg" rows="3" placeholder="Xabar matni..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="adminBroadcast()">Yuborish</button>
+        </div>
+        <div style="background:var(--surface);border-radius:12px;padding:20px">
+          <h4 style="margin:0 0 12px">👤 Bitta foydalanuvchiga</h4>
+          <input id="notifyUserId" type="text" placeholder="User ID..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);margin-bottom:8px" />
+          <textarea id="notifyUserMsg" rows="3" placeholder="Xabar matni..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical"></textarea>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="adminNotifyUser()">Yuborish</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
